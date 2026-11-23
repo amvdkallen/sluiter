@@ -3,25 +3,9 @@ import SwiftUI
 import Carbon.HIToolbox
 import ApplicationServices
 import Darwin
+import Combine
 
 // MARK: - Venster, menu en sneltoets
-
-final class HotKey {
-    private var ref: EventHotKeyRef?
-    private var handlerRef: EventHandlerRef?
-    static var action: (() -> Void)?
-
-    init(keyCode: Int, modifiers: Int, action: @escaping () -> Void) {
-        HotKey.action = action
-        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-            DispatchQueue.main.async { HotKey.action?() }
-            return noErr
-        }, 1, &spec, nil, &handlerRef)
-        let id = EventHotKeyID(signature: OSType(0x534C5452), id: 1) // 'SLTR'
-        RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), id, GetApplicationEventTarget(), 0, &ref)
-    }
-}
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     static weak var shared: AppDelegate?
@@ -29,20 +13,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let model = Model()
     var window: NSWindow!
     private var statusItem: NSStatusItem!
-    private var hotKey: HotKey?
     private var keyMonitor: Any?
+    private var settingsWindow: NSWindow?
+    private var openMenuItem: NSMenuItem?
+    private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         buildMainMenu()
         buildWindow()
         buildStatusItem()
-        hotKey = HotKey(keyCode: kVK_Space, modifiers: controlKey | optionKey) { [weak self] in self?.toggle() }
+        let settings = Settings.shared
+        HotKey.shared.action = { [weak self] in self?.toggle() }
+        if !HotKey.shared.register(keyCode: settings.hotKeyCode, carbonModifiers: settings.hotKeyModifiers) {
+            model.status = "Sneltoets \(settings.hotKeyDisplay) is bezet door een andere app — kies een andere via ⌘,"
+        }
+        settings.$hotKeyDisplay
+            .sink { [weak self] display in self?.openMenuItem?.title = "Openen (\(display))" }
+            .store(in: &cancellables)
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.window.isKeyWindow else { return event }
             return self.handle(event) ? nil : event
         }
-        show()
+        if settings.showWindowOnLaunch { show() }
     }
 
     /// Klik op het Dock-icoon: venster weer tonen.
@@ -96,6 +89,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let appMenu = NSMenu(title: "Sluiter")
         appMenu.addItem(withTitle: "Over Sluiter", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Instellingen…", action: #selector(openSettings), keyEquivalent: ",").target = self
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Verberg Sluiter", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let others = appMenu.addItem(withTitle: "Verberg andere", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         others.keyEquivalentModifierMask = [.command, .option]
@@ -137,14 +132,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "xmark.square", accessibilityDescription: "Sluiter")
         let menu = NSMenu()
-        let open = menu.addItem(withTitle: "Openen (⌃⌥Spatie)", action: #selector(showFromMenu), keyEquivalent: "")
+        let open = menu.addItem(withTitle: "Openen (\(Settings.shared.hotKeyDisplay))", action: #selector(showFromMenu), keyEquivalent: "")
         open.target = self
+        openMenuItem = open
+        menu.addItem(withTitle: "Instellingen…", action: #selector(openSettings), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Stop Sluiter", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         statusItem.menu = menu
     }
 
     @objc private func showFromMenu() { show() }
+
+    @objc func openSettings() {
+        if settingsWindow == nil {
+            let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
+            w.title = "Sluiter-instellingen"
+            w.styleMask = [.titled, .closable]
+            w.isReleasedWhenClosed = false
+            w.center()
+            settingsWindow = w
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow?.makeKeyAndOrderFront(nil)
+    }
     @objc private func showApps() { if model.mode != .apps { model.toggleMode() } }
     @objc private func showWindows() { if model.mode != .windows { model.toggleMode() } }
     @objc private func refresh() { model.reload(keepSelection: true) }

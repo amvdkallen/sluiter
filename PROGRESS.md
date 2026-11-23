@@ -16,7 +16,7 @@ Bij onderbreking (usage limit): `git log --oneline` + deze lijst laten zien waar
 - [x] 1+2. Beschermde apps + Opruimen
 - [x] 3. Meerdere selecteren
 - [x] 4. CPU + "reageert niet"
-- [ ] 5. Instellingen: starten bij inloggen + eigen sneltoets
+- [x] 5. Instellingen: starten bij inloggen + eigen sneltoets
 - [ ] 6. Systeembalk (geheugen, geheugendruk, CPU)
 - [ ] 7. Laatst gebruikt
 - [ ] 8. Waarschuwingen (veel geheugen / hangt)
