@@ -2,6 +2,20 @@
 
 Snel apps, vensters, browsertabbladen en achtergrondprocessen sluiten met het toetsenbord. Gemaakt voor momenten waarop je Mac traag is.
 
+> **English:** Sluiter ("closer") is a tiny native macOS app to quickly close apps, windows, browser tabs and background processes from the keyboard. Press ⌃⌥Space, scroll with ↑↓, hit Space to close. Shows memory and CPU per app, flags apps that hang, and keeps your pinned apps safe. Swift + AppKit, no dependencies. The UI is in Dutch.
+
+## Installeren
+Vereist macOS 13 of nieuwer en de Xcode Command Line Tools (`xcode-select --install`).
+```bash
+git clone https://github.com/amvdkallen/sluiter.git
+cd sluiter
+./build.sh --install
+```
+Sluiter staat daarna in Programma's. Hij is niet door Apple ondertekend; je bouwt hem zelf, dus macOS blokkeert hem niet.
+
+## Privacy
+Sluiter werkt volledig lokaal: geen internet, geen tracking, geen account. Toestemmingen die hij vraagt: Toegankelijkheid (vensters), Automatisering (browsertabbladen) en Meldingen.
+
 ## Openen
 - **⌃⌥Spatie** overal (in te stellen via ⌘,)
 - Dock, Launchpad, Spotlight of het ☒-icoon in de menubalk

@@ -1,2 +1,5 @@
 Sluiter.app/
 .DS_Store
+*.icns
+*.zip
+TWEET.md
