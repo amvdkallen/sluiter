@@ -7,7 +7,7 @@ import Combine
 
 // MARK: - Venster, menu en sneltoets
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     static weak var shared: AppDelegate?
 
     let model = Model()
@@ -120,6 +120,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         main.addItem(viewItem)
         main.addItem(actionsItem)
 
+        let wsItem = NSMenuItem()
+        let wsMenu = NSMenu(title: "Werksets")
+        wsMenu.delegate = self // wordt bij openen opnieuw opgebouwd
+        wsItem.submenu = wsMenu
+        main.addItem(wsItem)
+
         let winItem = NSMenuItem()
         let winMenu = NSMenu(title: "Venster")
         winMenu.addItem(withTitle: "Sluit venster", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
@@ -145,6 +151,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func showFromMenu() { show() }
+
+    // MARK: Werksets-menu
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu.title == "Werksets" else { return }
+        menu.removeAllItems()
+        menu.addItem(withTitle: "Huidige apps opslaan als werkset…", action: #selector(saveWorkspace), keyEquivalent: "").target = self
+        let store = WorkspaceStore.shared
+        if !store.workspaces.isEmpty { menu.addItem(.separator()) }
+        for (i, ws) in store.workspaces.enumerated() {
+            let item = NSMenuItem(title: "\(ws.name)  (\(ws.apps.count) apps)", action: nil, keyEquivalent: "")
+            let sub = NSMenu()
+            let open = sub.addItem(withTitle: "Openen", action: #selector(openWorkspace(_:)), keyEquivalent: "")
+            let sw = sub.addItem(withTitle: "Overschakelen — andere apps sluiten…", action: #selector(switchWorkspace(_:)), keyEquivalent: "")
+            sub.addItem(.separator())
+            let del = sub.addItem(withTitle: "Verwijderen", action: #selector(deleteWorkspace(_:)), keyEquivalent: "")
+            for x in [open, sw, del] { x.target = self; x.tag = i }
+            item.submenu = sub
+            menu.addItem(item)
+        }
+    }
+
+    private func workspace(for sender: NSMenuItem) -> Workspace? {
+        let list = WorkspaceStore.shared.workspaces
+        return list.indices.contains(sender.tag) ? list[sender.tag] : nil
+    }
+
+    @objc private func saveWorkspace() {
+        let msg = WorkspaceStore.shared.saveCurrent()
+        if !msg.isEmpty { model.status = msg }
+    }
+    @objc private func openWorkspace(_ sender: NSMenuItem) {
+        if let ws = workspace(for: sender) { model.status = WorkspaceStore.shared.open(ws) }
+    }
+    @objc private func switchWorkspace(_ sender: NSMenuItem) {
+        guard let ws = workspace(for: sender) else { return }
+        let msg = WorkspaceStore.shared.switchTo(ws)
+        if !msg.isEmpty { model.status = msg; model.reload() }
+    }
+    @objc private func deleteWorkspace(_ sender: NSMenuItem) {
+        if let ws = workspace(for: sender) { WorkspaceStore.shared.delete(ws) }
+    }
 
     @objc func openSettings() {
         if settingsWindow == nil {

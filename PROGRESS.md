@@ -22,7 +22,7 @@ Bij onderbreking (usage limit): `git log --oneline` + deze lijst laten zien waar
 - [x] 8. Waarschuwingen (veel geheugen / hangt)
 - [x] 9. Browsertabbladen (Chrome, Safari)
 - [x] 10+11. Spring naar venster + vensters groeperen per app
-- [ ] 12. Werksets opslaan/herstellen
+- [x] 12. Werksets opslaan/herstellen
 - [ ] 13. Achtergrondprocessen
 
 ## Notities

@@ -93,6 +93,7 @@ struct RowView: View {
 struct ContentView: View {
     @ObservedObject var model: Model
     @ObservedObject var settings = Settings.shared
+    @ObservedObject var workspaces = WorkspaceStore.shared
 
     var body: some View {
         let items = model.visible
@@ -225,6 +226,28 @@ struct ContentView: View {
                     }
                 }
                 Spacer()
+                Menu {
+                    Button("Huidige apps opslaan als werkset…") {
+                        let msg = workspaces.saveCurrent()
+                        if !msg.isEmpty { model.status = msg }
+                    }
+                    if !workspaces.workspaces.isEmpty { Divider() }
+                    ForEach(workspaces.workspaces) { ws in
+                        Menu("\(ws.name)  (\(ws.apps.count) apps)") {
+                            Button("Openen") { model.status = workspaces.open(ws) }
+                            Button("Overschakelen — andere apps sluiten…") {
+                                let msg = workspaces.switchTo(ws)
+                                if !msg.isEmpty { model.status = msg; model.reload() }
+                            }
+                            Divider()
+                            Button("Verwijderen") { workspaces.delete(ws) }
+                        }
+                    }
+                } label: {
+                    Label("Werksets", systemImage: "square.stack.3d.up")
+                }
+                .fixedSize()
+                .help("Bewaar welke apps open staan en zet ze later terug")
                 Button {
                     model.cleanUp()
                 } label: {
