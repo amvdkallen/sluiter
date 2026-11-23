@@ -98,8 +98,10 @@ struct ContentView: View {
         let items = model.visible
         VStack(spacing: 0) {
             HStack(spacing: 6) {
-                tab("Apps", active: model.mode == .apps)
-                tab("Vensters", active: model.mode == .windows)
+                ForEach(Model.Mode.allCases, id: \.self) { m in
+                    tab(m.title, active: model.mode == m)
+                        .onTapGesture { model.setMode(m) }
+                }
                 Spacer()
                 if model.mode == .apps {
                     Menu {
@@ -185,7 +187,11 @@ struct ContentView: View {
                     }
                     .padding(24)
                 } else if items.isEmpty {
-                    Text(model.loading ? "Laden…" : "Niets meer open 🎉").opacity(0.5)
+                    Text(model.loading ? "Laden…"
+                         : model.mode == .tabs ? "Geen tabbladen gevonden.\nOndersteund: Chrome, Brave, Edge, Vivaldi, Chromium en Safari."
+                         : "Niets meer open 🎉")
+                        .multilineTextAlignment(.center)
+                        .opacity(0.5)
                 }
             }
 

@@ -105,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let viewMenu = NSMenu(title: "Weergave")
         let apps = viewMenu.addItem(withTitle: "Apps", action: #selector(showApps), keyEquivalent: "1")
         let wins = viewMenu.addItem(withTitle: "Vensters", action: #selector(showWindows), keyEquivalent: "2")
+        viewMenu.addItem(withTitle: "Tabbladen", action: #selector(showTabs), keyEquivalent: "3").target = self
         viewMenu.addItem(.separator())
         let refresh = viewMenu.addItem(withTitle: "Ververs", action: #selector(refresh), keyEquivalent: "r")
         [apps, wins, refresh].forEach { $0.target = self }
@@ -157,8 +158,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
-    @objc private func showApps() { if model.mode != .apps { model.toggleMode() } }
-    @objc private func showWindows() { if model.mode != .windows { model.toggleMode() } }
+    @objc private func showApps() { if model.mode != .apps { model.setMode(.apps) } }
+    @objc private func showWindows() { if model.mode != .windows { model.setMode(.windows) } }
+    @objc private func showTabs() { if model.mode != .tabs { model.setMode(.tabs) } }
     @objc private func refresh() { model.reload(keepSelection: true) }
     @objc private func protectSelected() { model.toggleProtectSelected() }
     @objc private func cleanUp() { model.cleanUp() }

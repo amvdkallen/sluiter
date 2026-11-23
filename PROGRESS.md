@@ -20,10 +20,11 @@ Bij onderbreking (usage limit): `git log --oneline` + deze lijst laten zien waar
 - [x] 6. Systeembalk (geheugen, geheugendruk, CPU)
 - [x] 7. Laatst gebruikt
 - [x] 8. Waarschuwingen (veel geheugen / hangt)
-- [ ] 9. Browsertabbladen (Chrome, Safari)
+- [x] 9. Browsertabbladen (Chrome, Safari)
 - [ ] 10+11. Spring naar venster + vensters groeperen per app
 - [ ] 12. Werksets opslaan/herstellen
 - [ ] 13. Achtergrondprocessen
 
 ## Notities
 - Na elke nieuwe build moet Toegankelijkheid opnieuw worden toegestaan (ad-hoc handtekening).
+- Stap 9: AppleScripts zijn compile-getest; live test tegen Chrome vereist Automatisering-toestemming (door gebruiker te geven).

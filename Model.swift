@@ -7,7 +7,7 @@ import Darwin
 // MARK: - Model
 
 struct Item: Identifiable {
-    enum Kind { case app, window }
+    enum Kind { case app, window, tab }
     let id: String
     let kind: Kind
     let pid: pid_t
@@ -17,13 +17,18 @@ struct Item: Identifiable {
     let icon: NSImage?
     var memoryMB: Double
     let window: AXUIElement?
+    var tab: TabRef? = nil
     var cpuPercent: Double? = nil
     var notResponding = false
     var lastUsed: Date? = nil
 }
 
 final class Model: ObservableObject {
-    enum Mode { case apps, windows }
+    enum Mode: Int, CaseIterable {
+        case apps, windows, tabs
+        var title: String { ["Apps", "Vensters", "Tabbladen"][rawValue] }
+        var noun: String { ["apps", "vensters", "tabbladen"][rawValue] }
+    }
 
     enum SortOrder: String, CaseIterable {
         case memory = "Geheugen", cpu = "CPU", idle = "Langst ongebruikt", name = "Naam"
@@ -111,7 +116,16 @@ final class Model: ObservableObject {
 
         DispatchQueue.global(qos: .userInitiated).async {
             var unresponsive = 0
-            let result = mode == .apps ? Self.loadApps() : Self.loadWindows(unresponsive: &unresponsive)
+            var tabErrors: [String] = []
+            let result: [Item]
+            switch mode {
+            case .apps: result = Self.loadApps()
+            case .windows: result = Self.loadWindows(unresponsive: &unresponsive)
+            case .tabs:
+                let loaded = BrowserTabs.load()
+                result = loaded.items
+                tabErrors = loaded.errors
+            }
             let metrics = mode == .apps ? Metrics.measure(pids: result.map(\.pid), checkHang: false) : nil
             DispatchQueue.main.async {
                 guard gen == self.generation else { return }
@@ -129,6 +143,7 @@ final class Model: ObservableObject {
                 self.loading = false
                 let ids = Set(result.map(\.id))
                 self.marked = self.marked.intersection(ids)
+                if !tabErrors.isEmpty { self.status = tabErrors.joined(separator: " ") }
                 if mode == .windows && unresponsive > 0 && self.status.isEmpty {
                     self.status = "\(unresponsive) app(s) gaven geen antwoord (te traag of geen vensters)."
                 }
@@ -334,7 +349,11 @@ final class Model: ObservableObject {
     }
 
     func toggleMode() {
-        mode = (mode == .apps) ? .windows : .apps
+        setMode(Mode(rawValue: (mode.rawValue + 1) % Mode.allCases.count)!)
+    }
+
+    func setMode(_ newMode: Mode) {
+        mode = newMode
         filter = ""
         marked = []
         status = ""
@@ -376,7 +395,7 @@ final class Model: ObservableObject {
             status = skipped > 0 ? "Alles in deze lijst is beschermd." : ""
             return
         }
-        let noun = mode == .apps ? "apps" : "vensters"
+        let noun = mode.noun
         guard confirm("all", "Druk nogmaals ⌘⏎ om \(targets.count) \(noun) te sluiten"
                       + (skipped > 0 ? " (\(skipped) beschermd blijven open)." : ".")) else { return }
         closeMany(targets)
@@ -406,7 +425,8 @@ final class Model: ObservableObject {
     }
 
     private func closeMany(_ targets: [Item]) {
-        targets.forEach { close($0, force: false) }
+        closeTabs(targets.filter { $0.kind == .tab })
+        targets.filter { $0.kind != .tab }.forEach { close($0, force: false) }
         let ids = Set(targets.map(\.id))
         items.removeAll { ids.contains($0.id) }
         filter = ""
@@ -423,7 +443,8 @@ final class Model: ObservableObject {
         let targets = chosen.count == 1 ? chosen : chosen.filter { !settings.isProtected($0.bundleID) }
         let skipped = chosen.count - targets.count
         pendingConfirm = nil
-        targets.forEach { close($0, force: force) }
+        closeTabs(targets.filter { $0.kind == .tab })
+        targets.filter { $0.kind != .tab }.forEach { close($0, force: force) }
         let ids = Set(targets.map(\.id))
         items.removeAll { ids.contains($0.id) }
         marked = []
@@ -461,6 +482,34 @@ final class Model: ObservableObject {
                 status = "Venster “\(item.title)” gesloten."
             } else {
                 status = "Dit venster heeft geen sluitknop."
+            }
+        case .tab:
+            closeTabs([item])
+        }
+    }
+
+    private let tabQueue = DispatchQueue(label: "sluiter.tabs")
+
+    /// Sluit tabbladen op de achtergrond. Safari-tabbladen hebben geen vast id, dus die
+    /// sluiten we per venster van achter naar voren, en schuiven we de overige indexen op.
+    private func closeTabs(_ tabs: [Item]) {
+        let refs = tabs.compactMap(\.tab).sorted {
+            ($0.bundleID, $0.windowID, -$0.index) < ($1.bundleID, $1.windowID, -$1.index)
+        }
+        guard !refs.isEmpty else { return }
+        for ref in refs where ref.tabID == nil {
+            for i in items.indices {
+                guard var other = items[i].tab, other.tabID == nil, other.bundleID == ref.bundleID,
+                      other.windowID == ref.windowID, other.index > ref.index else { continue }
+                other.index -= 1
+                items[i].tab = other
+            }
+        }
+        status = refs.count == 1 ? "Tabblad “\(tabs.first?.title ?? "")” gesloten." : "\(refs.count) tabbladen gesloten."
+        tabQueue.async {
+            let errors = refs.compactMap { BrowserTabs.close($0) }
+            if let first = errors.first {
+                DispatchQueue.main.async { self.status = first }
             }
         }
     }
