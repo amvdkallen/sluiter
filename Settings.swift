@@ -22,12 +22,20 @@ final class Settings: ObservableObject {
     /// Venster tonen als Sluiter start (uit = stil starten, bv. bij inloggen).
     @Published var showWindowOnLaunch: Bool { didSet { defaults.set(showWindowOnLaunch, forKey: "showWindowOnLaunch") } }
 
+    // Waarschuwingen
+    @Published var alertsEnabled: Bool { didSet { defaults.set(alertsEnabled, forKey: "alertsEnabled") } }
+    @Published var alertThresholdGB: Double { didSet { defaults.set(alertThresholdGB, forKey: "alertThresholdGB") } }
+    @Published var alertOnPressure: Bool { didSet { defaults.set(alertOnPressure, forKey: "alertOnPressure") } }
+
     private init() {
         protectedApps = Set(defaults.stringArray(forKey: "protectedApps") ?? [])
         hotKeyCode = defaults.object(forKey: "hotKeyCode") as? Int ?? kVK_Space
         hotKeyModifiers = defaults.object(forKey: "hotKeyModifiers") as? Int ?? (controlKey | optionKey)
         hotKeyDisplay = defaults.string(forKey: "hotKeyDisplay") ?? "⌃⌥Spatie"
         showWindowOnLaunch = defaults.object(forKey: "showWindowOnLaunch") as? Bool ?? true
+        alertsEnabled = defaults.object(forKey: "alertsEnabled") as? Bool ?? true
+        alertThresholdGB = defaults.object(forKey: "alertThresholdGB") as? Double ?? 3
+        alertOnPressure = defaults.object(forKey: "alertOnPressure") as? Bool ?? true
     }
 
     func isProtected(_ bundleID: String?) -> Bool {

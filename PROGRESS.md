@@ -19,7 +19,7 @@ Bij onderbreking (usage limit): `git log --oneline` + deze lijst laten zien waar
 - [x] 5. Instellingen: starten bij inloggen + eigen sneltoets
 - [x] 6. Systeembalk (geheugen, geheugendruk, CPU)
 - [x] 7. Laatst gebruikt
-- [ ] 8. Waarschuwingen (veel geheugen / hangt)
+- [x] 8. Waarschuwingen (veel geheugen / hangt)
 - [ ] 9. Browsertabbladen (Chrome, Safari)
 - [ ] 10+11. Spring naar venster + vensters groeperen per app
 - [ ] 12. Werksets opslaan/herstellen

@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         _ = UsageTracker.shared // begin met bijhouden wanneer apps gebruikt worden
+        AlertMonitor.shared.start()
         buildMainMenu()
         buildWindow()
         buildStatusItem()

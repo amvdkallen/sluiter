@@ -36,6 +36,24 @@ struct SettingsView: View {
                     .font(.caption).foregroundColor(.secondary)
             }
 
+            Section("Waarschuwingen") {
+                Toggle("Stuur meldingen als een app je Mac vertraagt", isOn: Binding(
+                    get: { settings.alertsEnabled },
+                    set: { settings.alertsEnabled = $0; AlertMonitor.shared.reschedule() }
+                ))
+                if settings.alertsEnabled {
+                    HStack {
+                        Text("Melding als een app meer gebruikt dan")
+                        Spacer()
+                        Stepper(String(format: "%.1f GB", settings.alertThresholdGB),
+                                value: $settings.alertThresholdGB, in: 0.5...16, step: 0.5)
+                    }
+                    Toggle("Melding bij geheugentekort", isOn: $settings.alertOnPressure)
+                    Text("Apps die niet reageren worden ook gemeld (vereist Toegankelijkheid). Beschermde apps krijgen geen geheugenmelding. Per app hooguit één melding per uur.")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+
             Section("Beschermde apps 📌") {
                 if settings.protectedApps.isEmpty {
                     Text("Nog geen. Selecteer een app in de lijst en druk ⌘P.")
