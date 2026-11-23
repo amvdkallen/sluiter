@@ -106,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let apps = viewMenu.addItem(withTitle: "Apps", action: #selector(showApps), keyEquivalent: "1")
         let wins = viewMenu.addItem(withTitle: "Vensters", action: #selector(showWindows), keyEquivalent: "2")
         viewMenu.addItem(withTitle: "Tabbladen", action: #selector(showTabs), keyEquivalent: "3").target = self
+        viewMenu.addItem(withTitle: "Processen", action: #selector(showProcesses), keyEquivalent: "4").target = self
         viewMenu.addItem(.separator())
         let refresh = viewMenu.addItem(withTitle: "Ververs", action: #selector(refresh), keyEquivalent: "r")
         [apps, wins, refresh].forEach { $0.target = self }
@@ -209,6 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func showApps() { if model.mode != .apps { model.setMode(.apps) } }
     @objc private func showWindows() { if model.mode != .windows { model.setMode(.windows) } }
     @objc private func showTabs() { if model.mode != .tabs { model.setMode(.tabs) } }
+    @objc private func showProcesses() { if model.mode != .processes { model.setMode(.processes) } }
     @objc private func refresh() { model.reload(keepSelection: true) }
     @objc private func protectSelected() { model.toggleProtectSelected() }
     @objc private func cleanUp() { model.cleanUp() }

@@ -41,7 +41,7 @@ struct RowView: View {
                     .foregroundColor(selected ? .white : .orange)
                     .help("Beschermd: wordt niet meegesloten")
             }
-            if item.kind == .app {
+            if item.kind == .app || item.kind == .process {
                 Text(cpuText)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundColor(selected ? .white : cpuColor)
@@ -104,7 +104,7 @@ struct ContentView: View {
                         .onTapGesture { model.setMode(m) }
                 }
                 Spacer()
-                if model.mode == .apps {
+                if model.mode.hasMetrics {
                     Menu {
                         ForEach(Model.SortOrder.allCases, id: \.self) { order in
                             Button {
@@ -175,7 +175,7 @@ struct ContentView: View {
                                 .contextMenu {
                                     Button("Toon (→)") { model.selection = index; model.focusSelected() }
                                     Button("Sluiten") { model.selection = index; model.closeSelected(force: false) }
-                                    if item.kind == .app {
+                                    if item.kind == .app || item.kind == .process {
                                         Button("Geforceerd stoppen") { model.selection = index; model.closeSelected(force: true) }
                                     }
                                     Button(model.marked.contains(item.id) ? "Markering weghalen" : "Markeren") {
@@ -208,6 +208,7 @@ struct ContentView: View {
                     .padding(24)
                 } else if items.isEmpty {
                     Text(model.loading ? "Laden…"
+                         : model.mode == .processes ? "Geen achtergrondprocessen boven 5 MB."
                          : model.mode == .tabs ? "Geen tabbladen gevonden.\nOndersteund: Chrome, Brave, Edge, Vivaldi, Chromium en Safari."
                          : "Niets meer open 🎉")
                         .multilineTextAlignment(.center)

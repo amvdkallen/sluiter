@@ -23,7 +23,7 @@ Bij onderbreking (usage limit): `git log --oneline` + deze lijst laten zien waar
 - [x] 9. Browsertabbladen (Chrome, Safari)
 - [x] 10+11. Spring naar venster + vensters groeperen per app
 - [x] 12. Werksets opslaan/herstellen
-- [ ] 13. Achtergrondprocessen
+- [x] 13. Achtergrondprocessen
 
 ## Notities
 - Na elke nieuwe build moet Toegankelijkheid opnieuw worden toegestaan (ad-hoc handtekening).

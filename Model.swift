@@ -7,7 +7,7 @@ import Darwin
 // MARK: - Model
 
 struct Item: Identifiable {
-    enum Kind { case app, window, tab }
+    enum Kind { case app, window, tab, process }
     let id: String
     let kind: Kind
     let pid: pid_t
@@ -25,9 +25,11 @@ struct Item: Identifiable {
 
 final class Model: ObservableObject {
     enum Mode: Int, CaseIterable {
-        case apps, windows, tabs
-        var title: String { ["Apps", "Vensters", "Tabbladen"][rawValue] }
-        var noun: String { ["apps", "vensters", "tabbladen"][rawValue] }
+        case apps, windows, tabs, processes
+        var title: String { ["Apps", "Vensters", "Tabbladen", "Processen"][rawValue] }
+        var noun: String { ["apps", "vensters", "tabbladen", "processen"][rawValue] }
+        /// Tabbladen met live CPU/geheugen-cijfers.
+        var hasMetrics: Bool { self == .apps || self == .processes }
     }
 
     enum SortOrder: String, CaseIterable {
@@ -125,12 +127,14 @@ final class Model: ObservableObject {
                 let loaded = BrowserTabs.load()
                 result = loaded.items
                 tabErrors = loaded.errors
+            case .processes: result = Self.loadProcesses()
             }
-            let metrics = mode == .apps ? Metrics.measure(pids: result.map(\.pid), checkHang: false) : nil
+            let metrics = mode.hasMetrics ? Metrics.measure(pids: result.map(\.pid), checkHang: false) : nil
             DispatchQueue.main.async {
                 guard gen == self.generation else { return }
                 self.items = result
                 if let metrics { self.apply(metrics) }
+                if mode == .processes { self.sortItems() }
                 if mode == .apps {
                     let tracker = UsageTracker.shared
                     for i in self.items.indices {
@@ -176,9 +180,89 @@ final class Model: ObservableObject {
             }
     }
 
+    /// Achtergrondprocessen van jouw gebruiker die niet bij een gewone app horen
+    /// (helpers, menubalk-apps, sync-diensten, scripts). macOS-systeemprocessen worden
+    /// bewust verborgen, zodat je niet per ongeluk iets kritieks (zoals loginwindow) stopt.
+    static func loadProcesses() -> [Item] {
+        let tree = ProcTree()
+        let me = ProcessInfo.processInfo.processIdentifier
+        let uid = getuid()
+        // Alles wat al onder een gewone app valt (incl. helpers) overslaan.
+        var covered = Set(tree.family(me))
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+            covered.formUnion(tree.family(app.processIdentifier))
+        }
+        let systemPrefixes = ["/System/", "/usr/", "/bin/", "/sbin/", "/Library/Apple/", "/private/var/", "/Library/Developer/CommandLineTools/"]
+        // 1) Kandidaten: eigen processen, niet onder een app, niet van macOS zelf, ≥ 5 MB.
+        var candidates: [pid_t: String] = [:]
+        for (pid, info) in tree.info where info.uid == uid && !covered.contains(pid) {
+            var buf = [CChar](repeating: 0, count: 4096)
+            guard proc_pidpath(pid, &buf, UInt32(buf.count)) > 0 else { continue }
+            let path = String(cString: buf)
+            if !systemPrefixes.contains(where: path.hasPrefix) { candidates[pid] = path }
+        }
+        // 2) Alleen de top van elke procesboom tonen; kinderen tellen mee in het totaal.
+        let home = NSHomeDirectory()
+        var out: [Item] = []
+        for (pid, path) in candidates {
+            guard let info = tree.info[pid], candidates[info.ppid] == nil else { continue }
+            let mb = tree.totalMB(pid)
+            guard mb >= 5 else { continue }
+            let running = NSRunningApplication(processIdentifier: pid)
+            let isMenuBar = running?.activationPolicy == .accessory
+            let shortPath = path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+            out.append(Item(id: "proc-\(pid)", kind: .process, pid: pid,
+                            bundleID: running?.bundleIdentifier,
+                            title: running?.localizedName ?? Self.friendlyName(pid: pid, name: info.name, path: path),
+                            subtitle: (isMenuBar ? "menubalk-app · " : "") + shortPath,
+                            icon: running?.icon ?? NSWorkspace.shared.icon(forFile: path),
+                            memoryMB: mb, window: nil))
+        }
+        return out
+    }
+
+    /// Maakt procesnamen leesbaar: "2.1.311" → "claude 2.1.311", "Python" → "Python · server.py".
+    static func friendlyName(pid: pid_t, name: String, path: String) -> String {
+        let isVersion = { (s: String) in !s.isEmpty && s.allSatisfy { $0.isNumber || $0 == "." } }
+        if isVersion(name) {
+            let skip: Set<String> = ["versions", "bin", "MacOS", "Contents", "current", "libexec"]
+            let parts = path.split(separator: "/").map(String.init).dropLast()
+            if let owner = parts.reversed().first(where: { !skip.contains($0) && !isVersion($0) }) {
+                return "\(owner) \(name)"
+            }
+        }
+        let interpreters = ["python", "node", "ruby", "java", "perl", "php", "bash", "zsh", "sh", "deno", "bun"]
+        if interpreters.contains(where: { name.lowercased().hasPrefix($0) }),
+           let script = processArguments(pid).dropFirst().first(where: { !$0.hasPrefix("-") }) {
+            return "\(name) · \((script as NSString).lastPathComponent)"
+        }
+        return name
+    }
+
+    /// Opstartargumenten van een proces (via KERN_PROCARGS2).
+    static func processArguments(_ pid: pid_t) -> [String] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 0 else { return [] }
+        var buf = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0, size > 4 else { return [] }
+        let argc = buf.withUnsafeBytes { $0.load(as: Int32.self) }
+        var i = 4
+        while i < size && buf[i] != 0 { i += 1 }   // pad naar het programma overslaan
+        while i < size && buf[i] == 0 { i += 1 }   // opvulling overslaan
+        var args: [String] = []
+        while args.count < Int(argc) && i < size {
+            let start = i
+            while i < size && buf[i] != 0 { i += 1 }
+            args.append(String(decoding: buf[start..<i], as: UTF8.self))
+            i += 1
+        }
+        return args
+    }
+
     /// Sorteert de app-lijst volgens de gekozen volgorde (vensters blijven per app gegroepeerd).
     func sortItems() {
-        guard mode == .apps else { return }
+        guard mode.hasMetrics else { return }
         let id = selectedItem?.id
         switch sortOrder {
         case .memory: items.sort { $0.memoryMB > $1.memoryMB }
@@ -278,16 +362,17 @@ final class Model: ObservableObject {
     // MARK: Live meten (CPU, geheugen, hangen)
 
     private func refreshMetrics() {
-        guard mode == .apps, !measuring, !items.isEmpty, NSApp.isActive,
+        guard mode.hasMetrics, !measuring, !items.isEmpty, NSApp.isActive,
               AppDelegate.shared?.window.isVisible == true else { return }
         measuring = true
         let pids = items.map(\.pid)
-        let checkHang = Self.axTrusted(prompt: false)
+        let mode = self.mode
+        let checkHang = mode == .apps && Self.axTrusted(prompt: false)
         DispatchQueue.global(qos: .utility).async {
             let m = Metrics.measure(pids: pids, checkHang: checkHang)
             DispatchQueue.main.async {
                 self.measuring = false
-                if self.mode == .apps { self.apply(m) }
+                if self.mode == mode { self.apply(m) }
             }
         }
     }
@@ -485,6 +570,14 @@ final class Model: ObservableObject {
             }
         case .tab:
             closeTabs([item])
+        case .process:
+            if let app = NSRunningApplication(processIdentifier: item.pid), app.activationPolicy != .prohibited {
+                _ = force ? app.forceTerminate() : app.terminate()
+            } else if kill(item.pid, force ? SIGKILL : SIGTERM) != 0 {
+                status = "\(item.title) kon niet gestopt worden (\(String(cString: strerror(errno))))."
+                return
+            }
+            status = "\(item.title) \(force ? "geforceerd gestopt" : "wordt gestopt")…"
         }
     }
 
@@ -496,7 +589,7 @@ final class Model: ObservableObject {
     func focusSelected() {
         guard let item = selectedItem, let app = NSRunningApplication(processIdentifier: item.pid) else { return }
         switch item.kind {
-        case .app:
+        case .app, .process:
             app.unhide()
             app.activate(options: [.activateAllWindows])
         case .window:
@@ -515,7 +608,7 @@ final class Model: ObservableObject {
     /// Groepssleutel voor kopjes in de lijst (vensters per app, tabbladen per browservenster).
     func groupKey(_ item: Item) -> String? {
         switch item.kind {
-        case .app: return nil
+        case .app, .process: return nil
         case .window: return "pid-\(item.pid)"
         case .tab: return item.tab.map { "\($0.bundleID)-\($0.windowID)" }
         }
