@@ -490,6 +490,55 @@ final class Model: ObservableObject {
 
     private let tabQueue = DispatchQueue(label: "sluiter.tabs")
 
+    // MARK: Springen (→)
+
+    /// Brengt de geselecteerde app, het venster of het tabblad naar voren.
+    func focusSelected() {
+        guard let item = selectedItem, let app = NSRunningApplication(processIdentifier: item.pid) else { return }
+        switch item.kind {
+        case .app:
+            app.unhide()
+            app.activate(options: [.activateAllWindows])
+        case .window:
+            if let w = item.window {
+                AXUIElementSetAttributeValue(w, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+                AXUIElementPerformAction(w, kAXRaiseAction as CFString)
+            }
+            app.unhide()
+            app.activate()
+        case .tab:
+            guard let ref = item.tab else { return }
+            tabQueue.async { BrowserTabs.focus(ref) }
+        }
+    }
+
+    /// Groepssleutel voor kopjes in de lijst (vensters per app, tabbladen per browservenster).
+    func groupKey(_ item: Item) -> String? {
+        switch item.kind {
+        case .app: return nil
+        case .window: return "pid-\(item.pid)"
+        case .tab: return item.tab.map { "\($0.bundleID)-\($0.windowID)" }
+        }
+    }
+
+    /// Kopje voor een groep, bv. "Safari · 4 vensters".
+    func groupTitle(for item: Item, in list: [Item]) -> String {
+        let key = groupKey(item)
+        let count = list.filter { groupKey($0) == key }.count
+        let appName = NSRunningApplication(processIdentifier: item.pid)?.localizedName ?? "App"
+        switch item.kind {
+        case .tab:
+            // Nummer het browservenster binnen deze browser.
+            let windowKeys = list.compactMap { $0.tab?.bundleID == item.tab?.bundleID ? groupKey($0) : nil }
+            var seen: [String] = []
+            for k in windowKeys where !seen.contains(k) { seen.append(k) }
+            let nr = (seen.firstIndex(of: key ?? "") ?? 0) + 1
+            return "\(appName) — venster \(nr) · \(count) \(count == 1 ? "tabblad" : "tabbladen")"
+        default:
+            return "\(appName) · \(count) \(count == 1 ? "venster" : "vensters")"
+        }
+    }
+
     /// Sluit tabbladen op de achtergrond. Safari-tabbladen hebben geen vast id, dus die
     /// sluiten we per venster van achter naar voren, en schuiven we de overige indexen op.
     private func closeTabs(_ tabs: [Item]) {

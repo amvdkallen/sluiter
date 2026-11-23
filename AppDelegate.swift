@@ -190,6 +190,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case kVK_UpArrow: shift ? model.extendMark(-1) : model.move(-1)
         case kVK_PageDown: model.move(10)
         case kVK_PageUp: model.move(-10)
+        case kVK_RightArrow: model.focusSelected()
         case kVK_Home: model.jump(toEnd: false)
         case kVK_End: model.jump(toEnd: true)
         case kVK_Return, kVK_ANSI_KeypadEnter:

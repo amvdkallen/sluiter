@@ -145,15 +145,34 @@ struct ContentView: View {
                 ScrollView {
                     LazyVStack(spacing: 2) {
                         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                            if let key = model.groupKey(item), index == 0 || model.groupKey(items[index - 1]) != key {
+                                HStack(spacing: 6) {
+                                    if let icon = item.icon {
+                                        Image(nsImage: icon).resizable().frame(width: 14, height: 14)
+                                    }
+                                    Text(model.groupTitle(for: item, in: items))
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .opacity(0.6)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.top, index == 0 ? 2 : 10)
+                                .padding(.bottom, 2)
+                            }
                             RowView(item: item, selected: index == model.selection,
                                     isProtected: settings.isProtected(item.bundleID),
                                     isMarked: model.marked.contains(item.id))
                                 .id(item.id)
+                                .onTapGesture(count: 2) {
+                                    model.selection = index
+                                    model.focusSelected()
+                                }
                                 .onTapGesture {
                                     if NSEvent.modifierFlags.contains(.command) { model.toggleMark(at: index) }
                                     else { model.selection = index }
                                 }
                                 .contextMenu {
+                                    Button("Toon (→)") { model.selection = index; model.focusSelected() }
                                     Button("Sluiten") { model.selection = index; model.closeSelected(force: false) }
                                     if item.kind == .app {
                                         Button("Geforceerd stoppen") { model.selection = index; model.closeSelected(force: true) }
@@ -199,7 +218,7 @@ struct ContentView: View {
 
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("↑↓ kiezen · spatie/⏎ sluiten · ⇧↑↓/⌘A markeren · ⇧⏎ forceer · ⌘⏎ alles · ⌘P beschermen · ⌘⌫ opruimen · ⇥ wissel")
+                    Text("↑↓ kiezen · spatie/⏎ sluiten · ⇧↑↓/⌘A markeren · ⇧⏎ forceer · ⌘⏎ alles · → toon · ⌘P beschermen · ⌘⌫ opruimen · ⇥ wissel")
                         .font(.system(size: 11)).opacity(0.6)
                     if !model.status.isEmpty {
                         Text(model.status).font(.system(size: 11, weight: .medium)).lineLimit(2)
