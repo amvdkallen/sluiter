@@ -11,6 +11,7 @@ struct Item: Identifiable {
     let id: String
     let kind: Kind
     let pid: pid_t
+    let bundleID: String?
     let title: String
     let subtitle: String
     let icon: NSImage?
@@ -29,7 +30,8 @@ final class Model: ObservableObject {
     @Published var loading = false
 
     private var generation = 0
-    private var confirmCloseAll = false
+    /// Welke bevestiging openstaat (tweede keer drukken = uitvoeren).
+    private var pendingConfirm: String?
 
     var visible: [Item] {
         guard !filter.isEmpty else { return items }
@@ -94,6 +96,7 @@ final class Model: ObservableObject {
             .filter { $0.bundleIdentifier != "com.apple.finder" }
             .map { app in
                 Item(id: "app-\(app.processIdentifier)", kind: .app, pid: app.processIdentifier,
+                     bundleID: app.bundleIdentifier,
                      title: app.localizedName ?? "Onbekend",
                      subtitle: app.isHidden ? "verborgen" : "",
                      icon: app.icon, memoryMB: tree.totalMB(app.processIdentifier), window: nil)
@@ -120,7 +123,7 @@ final class Model: ObservableObject {
                 AXUIElementCopyAttributeValue(w, kAXMinimizedAttribute as CFString, &minimized)
                 let isMin = (minimized as? Bool) ?? false
                 out.append(Item(id: "win-\(app.processIdentifier)-\(i)-\(title)", kind: .window,
-                                pid: app.processIdentifier, title: title,
+                                pid: app.processIdentifier, bundleID: app.bundleIdentifier, title: title,
                                 subtitle: appName + (isMin ? " · geminimaliseerd" : ""),
                                 icon: app.icon, memoryMB: 0, window: w))
             }
@@ -175,7 +178,7 @@ final class Model: ObservableObject {
         let count = visible.count
         guard count > 0 else { return }
         selection = min(max(0, selection + delta), count - 1)
-        confirmCloseAll = false
+        pendingConfirm = nil
     }
 
     func jump(toEnd: Bool) {
@@ -192,28 +195,84 @@ final class Model: ObservableObject {
 
     func closeSelected(force: Bool) {
         guard let item = selectedItem else { return }
-        confirmCloseAll = false
+        pendingConfirm = nil
         close(item, force: force)
         items.removeAll { $0.id == item.id }
         clampSelection()
         scheduleResync()
     }
 
+    /// Vraagt bij de eerste keer om bevestiging; geeft true als de actie nu mag.
+    private func confirm(_ key: String, _ message: String) -> Bool {
+        if pendingConfirm == key {
+            pendingConfirm = nil
+            return true
+        }
+        pendingConfirm = key
+        status = message
+        return false
+    }
+
+    /// ⌘⏎: sluit alles wat zichtbaar is in de lijst, behalve beschermde apps.
     func closeAllVisible() {
-        let targets = visible
-        guard !targets.isEmpty else { return }
-        if !confirmCloseAll {
-            confirmCloseAll = true
-            status = "Druk nogmaals ⌘⏎ om alle \(targets.count) \(mode == .apps ? "apps" : "vensters") te sluiten."
+        let settings = Settings.shared
+        let all = visible
+        let targets = all.filter { !settings.isProtected($0.bundleID) }
+        let skipped = all.count - targets.count
+        guard !targets.isEmpty else {
+            status = skipped > 0 ? "Alles in deze lijst is beschermd." : ""
             return
         }
-        confirmCloseAll = false
+        let noun = mode == .apps ? "apps" : "vensters"
+        guard confirm("all", "Druk nogmaals ⌘⏎ om \(targets.count) \(noun) te sluiten"
+                      + (skipped > 0 ? " (\(skipped) beschermd blijven open)." : ".")) else { return }
+        closeMany(targets)
+    }
+
+    /// Opruimen: sluit álle apps behalve beschermde, ongeacht filter of tabblad.
+    func cleanUp() {
+        let settings = Settings.shared
+        let targets = Self.regularApps().filter {
+            $0.bundleIdentifier != "com.apple.finder" && !settings.isProtected($0.bundleIdentifier)
+        }
+        guard !targets.isEmpty else {
+            status = "Niets op te ruimen — alleen beschermde apps zijn open."
+            return
+        }
+        let protectedCount = settings.protectedApps.count
+        guard confirm("cleanup", "Opruimen: druk nogmaals ⌘⌫ om \(targets.count) apps te sluiten"
+                      + (protectedCount > 0 ? " (beschermde apps blijven open)." : ". Tip: bescherm apps met ⌘P.")) else { return }
+        targets.forEach { _ = $0.terminate() }
+        if mode == .apps {
+            let pids = Set(targets.map(\.processIdentifier))
+            items.removeAll { pids.contains($0.pid) }
+        }
+        clampSelection()
+        status = "Opgeruimd: \(targets.count) apps worden afgesloten."
+        scheduleResync()
+    }
+
+    private func closeMany(_ targets: [Item]) {
         targets.forEach { close($0, force: false) }
         let ids = Set(targets.map(\.id))
         items.removeAll { ids.contains($0.id) }
         filter = ""
+        clampSelection()
         status = "\(targets.count) gesloten."
         scheduleResync()
+    }
+
+    /// ⌘P: bescherm de app van het geselecteerde item (of haal de bescherming weg).
+    func toggleProtectSelected() {
+        guard let item = selectedItem else { return }
+        guard let id = item.bundleID else {
+            status = "Deze app kan niet beschermd worden (geen bundle-ID)."
+            return
+        }
+        let appName = NSRunningApplication(processIdentifier: item.pid)?.localizedName ?? item.title
+        let now = Settings.shared.toggleProtected(id)
+        status = now ? "📌 \(appName) is beschermd en wordt niet meer meegesloten."
+                     : "\(appName) is niet meer beschermd."
     }
 
     private func close(_ item: Item, force: Bool) {

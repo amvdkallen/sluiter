@@ -111,8 +111,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         viewMenu.addItem(.separator())
         let refresh = viewMenu.addItem(withTitle: "Ververs", action: #selector(refresh), keyEquivalent: "r")
         [apps, wins, refresh].forEach { $0.target = self }
+
+        let actionsItem = NSMenuItem()
+        let actionsMenu = NSMenu(title: "Acties")
+        let protect = actionsMenu.addItem(withTitle: "Beschermen aan/uit", action: #selector(protectSelected), keyEquivalent: "p")
+        let cleanup = actionsMenu.addItem(withTitle: "Opruimen…", action: #selector(cleanUp), keyEquivalent: "\u{8}")
+        [protect, cleanup].forEach { $0.target = self }
+        actionsItem.submenu = actionsMenu
         viewItem.submenu = viewMenu
         main.addItem(viewItem)
+        main.addItem(actionsItem)
 
         let winItem = NSMenuItem()
         let winMenu = NSMenu(title: "Venster")
@@ -140,6 +148,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func showApps() { if model.mode != .apps { model.toggleMode() } }
     @objc private func showWindows() { if model.mode != .windows { model.toggleMode() } }
     @objc private func refresh() { model.reload(keepSelection: true) }
+    @objc private func protectSelected() { model.toggleProtectSelected() }
+    @objc private func cleanUp() { model.cleanUp() }
 
     func toggle() {
         if NSApp.isActive && window.isKeyWindow { NSApp.hide(nil) } else { show() }
@@ -179,8 +189,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case kVK_Escape:
             if model.filter.isEmpty { NSApp.hide(nil) } else { model.filter = "" }
         case kVK_Delete:
-            if !model.filter.isEmpty { model.filter.removeLast() }
+            if cmd { model.cleanUp() }
+            else if !model.filter.isEmpty { model.filter.removeLast() }
         default:
+            if cmd && e.charactersIgnoringModifiers?.lowercased() == "p" {
+                model.toggleProtectSelected()
+                return true
+            }
             if cmd || flags.contains(.control) { return false } // laat het menu ⌘-toetsen afhandelen
             guard let chars = e.characters, !chars.isEmpty,
                   chars.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.union(.punctuationCharacters).contains($0) })

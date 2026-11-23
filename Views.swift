@@ -9,6 +9,7 @@ import Darwin
 struct RowView: View {
     let item: Item
     let selected: Bool
+    let isProtected: Bool
 
     var body: some View {
         HStack(spacing: 10) {
@@ -24,6 +25,12 @@ struct RowView: View {
                 }
             }
             Spacer()
+            if isProtected {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(selected ? .white : .orange)
+                    .help("Beschermd: wordt niet meegesloten")
+            }
             if item.kind == .app {
                 Text(memoryText)
                     .font(.system(size: 12, design: .monospaced))
@@ -49,6 +56,7 @@ struct RowView: View {
 
 struct ContentView: View {
     @ObservedObject var model: Model
+    @ObservedObject var settings = Settings.shared
 
     var body: some View {
         let items = model.visible
@@ -71,9 +79,20 @@ struct ContentView: View {
                 ScrollView {
                     LazyVStack(spacing: 2) {
                         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                            RowView(item: item, selected: index == model.selection)
+                            RowView(item: item, selected: index == model.selection,
+                                    isProtected: settings.isProtected(item.bundleID))
                                 .id(item.id)
                                 .onTapGesture { model.selection = index }
+                                .contextMenu {
+                                    Button("Sluiten") { model.selection = index; model.closeSelected(force: false) }
+                                    if item.kind == .app {
+                                        Button("Geforceerd stoppen") { model.selection = index; model.closeSelected(force: true) }
+                                    }
+                                    Divider()
+                                    Button(settings.isProtected(item.bundleID) ? "Bescherming opheffen" : "Beschermen 📌") {
+                                        model.selection = index; model.toggleProtectSelected()
+                                    }
+                                }
                         }
                     }
                     .padding(6)
@@ -101,12 +120,21 @@ struct ContentView: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("↑↓ kiezen · spatie/⏎ sluiten · ⇧⏎ forceer stop · ⌘⏎ alles · ⇥ apps/vensters · ⌘R ververs · esc")
-                    .font(.system(size: 11)).opacity(0.6)
-                if !model.status.isEmpty {
-                    Text(model.status).font(.system(size: 11, weight: .medium)).lineLimit(2)
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("↑↓ kiezen · spatie/⏎ sluiten · ⇧⏎ forceer · ⌘⏎ alles · ⌘P beschermen · ⌘⌫ opruimen · ⇥ wissel")
+                        .font(.system(size: 11)).opacity(0.6)
+                    if !model.status.isEmpty {
+                        Text(model.status).font(.system(size: 11, weight: .medium)).lineLimit(2)
+                    }
                 }
+                Spacer()
+                Button {
+                    model.cleanUp()
+                } label: {
+                    Label("Opruimen", systemImage: "sparkles")
+                }
+                .help("Sluit alle apps behalve beschermde (⌘⌫)")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
