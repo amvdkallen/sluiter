@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
+        _ = UsageTracker.shared // begin met bijhouden wanneer apps gebruikt worden
         buildMainMenu()
         buildWindow()
         buildStatusItem()
@@ -205,6 +206,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         default:
             if cmd && e.charactersIgnoringModifiers?.lowercased() == "p" {
                 model.toggleProtectSelected()
+                return true
+            }
+            if cmd && e.charactersIgnoringModifiers?.lowercased() == "s" {
+                model.cycleSort()
                 return true
             }
             if cmd && e.charactersIgnoringModifiers?.lowercased() == "a" {

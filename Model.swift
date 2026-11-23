@@ -19,10 +19,27 @@ struct Item: Identifiable {
     let window: AXUIElement?
     var cpuPercent: Double? = nil
     var notResponding = false
+    var lastUsed: Date? = nil
 }
 
 final class Model: ObservableObject {
     enum Mode { case apps, windows }
+
+    enum SortOrder: String, CaseIterable {
+        case memory = "Geheugen", cpu = "CPU", idle = "Langst ongebruikt", name = "Naam"
+        var next: SortOrder {
+            let all = Self.allCases
+            return all[(all.firstIndex(of: self)! + 1) % all.count]
+        }
+    }
+
+    @Published var sortOrder: SortOrder = SortOrder(rawValue: UserDefaults.standard.string(forKey: "sortOrder") ?? "") ?? .memory {
+        didSet {
+            UserDefaults.standard.set(sortOrder.rawValue, forKey: "sortOrder")
+            sortItems()
+            selection = 0
+        }
+    }
 
     @Published var mode: Mode = .apps
     @Published var items: [Item] = []
@@ -100,6 +117,15 @@ final class Model: ObservableObject {
                 guard gen == self.generation else { return }
                 self.items = result
                 if let metrics { self.apply(metrics) }
+                if mode == .apps {
+                    let tracker = UsageTracker.shared
+                    for i in self.items.indices {
+                        if let app = NSRunningApplication(processIdentifier: self.items[i].pid) {
+                            self.items[i].lastUsed = tracker.lastUsed(app)
+                        }
+                    }
+                    self.sortItems()
+                }
                 self.loading = false
                 let ids = Set(result.map(\.id))
                 self.marked = self.marked.intersection(ids)
@@ -133,7 +159,24 @@ final class Model: ObservableObject {
                      subtitle: app.isHidden ? "verborgen" : "",
                      icon: app.icon, memoryMB: tree.totalMB(app.processIdentifier), window: nil)
             }
-            .sorted { $0.memoryMB > $1.memoryMB }
+    }
+
+    /// Sorteert de app-lijst volgens de gekozen volgorde (vensters blijven per app gegroepeerd).
+    func sortItems() {
+        guard mode == .apps else { return }
+        let id = selectedItem?.id
+        switch sortOrder {
+        case .memory: items.sort { $0.memoryMB > $1.memoryMB }
+        case .cpu: items.sort { ($0.cpuPercent ?? 0, $0.memoryMB) > ($1.cpuPercent ?? 0, $1.memoryMB) }
+        case .idle: items.sort { ($0.lastUsed ?? .distantPast) < ($1.lastUsed ?? .distantPast) }
+        case .name: items.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        }
+        if let id, let idx = visible.firstIndex(where: { $0.id == id }) { selection = idx }
+    }
+
+    func cycleSort() {
+        sortOrder = sortOrder.next
+        status = "Gesorteerd op: \(sortOrder.rawValue.lowercased())"
     }
 
     private static func loadWindows(unresponsive: inout Int) -> [Item] {

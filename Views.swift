@@ -30,8 +30,8 @@ struct RowView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(selected ? .white : .red)
                         .lineLimit(1)
-                } else if !item.subtitle.isEmpty {
-                    Text(item.subtitle).font(.system(size: 11)).opacity(0.65).lineLimit(1)
+                } else if !subtitleText.isEmpty {
+                    Text(subtitleText).font(.system(size: 11)).opacity(0.65).lineLimit(1)
                 }
             }
             Spacer()
@@ -69,6 +69,12 @@ struct RowView: View {
                               : String(format: "%.0f MB", item.memoryMB)
     }
 
+    private var subtitleText: String {
+        guard item.kind == .app else { return item.subtitle }
+        let usage = UsageTracker.shared.describe(item.lastUsed)
+        return item.subtitle.isEmpty ? usage : "\(item.subtitle) · \(usage)"
+    }
+
     private var cpuText: String {
         guard let cpu = item.cpuPercent else { return "—" }
         return cpu < 10 ? String(format: "%.1f%%", cpu) : String(format: "%.0f%%", cpu)
@@ -95,6 +101,24 @@ struct ContentView: View {
                 tab("Apps", active: model.mode == .apps)
                 tab("Vensters", active: model.mode == .windows)
                 Spacer()
+                if model.mode == .apps {
+                    Menu {
+                        ForEach(Model.SortOrder.allCases, id: \.self) { order in
+                            Button {
+                                model.sortOrder = order
+                            } label: {
+                                if order == model.sortOrder { Label(order.rawValue, systemImage: "checkmark") }
+                                else { Text(order.rawValue) }
+                            }
+                        }
+                    } label: {
+                        Label(model.sortOrder.rawValue, systemImage: "arrow.up.arrow.down")
+                            .font(.system(size: 11))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("Sorteren (⌘S wisselt)")
+                }
                 Image(systemName: "magnifyingglass").opacity(0.5)
                 Text(model.filter.isEmpty ? "Typ om te filteren" : model.filter)
                     .opacity(model.filter.isEmpty ? 0.4 : 1)
