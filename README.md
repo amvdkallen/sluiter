@@ -53,6 +53,9 @@ Knop **Werksets** (of menu Werksets): sla de apps op die nu open staan, en zet z
 ## Waarschuwingen
 Op de achtergrond (elke 30 s) krijg je een melding met de knop **Sluiten** als een app meer dan 3 GB gebruikt (instelbaar), blijft hangen, of als je Mac geheugentekort krijgt.
 
+## Meehelpen
+Verbeteringen zijn welkom! Lees [CONTRIBUTING.md](CONTRIBUTING.md) voor hoe de code in elkaar zit, en open een issue of pull request. *Contributions welcome, see CONTRIBUTING.md.*
+
 ## Bouwen
 ```bash
 ./build.sh --install

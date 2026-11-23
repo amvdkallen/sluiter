@@ -1,0 +1,19 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Sluiter.app
+        run: ./build.sh
+      - name: Check the app bundle
+        run: |
+          test -x Sluiter.app/Contents/MacOS/Sluiter
+          test -f Sluiter.app/Contents/Resources/Sluiter.icns
+          plutil -lint Sluiter.app/Contents/Info.plist
