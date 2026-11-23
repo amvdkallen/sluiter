@@ -32,6 +32,8 @@ final class Model: ObservableObject {
     @Published var loading = false
     /// Gemarkeerde items (id's) voor meervoudig sluiten.
     @Published var marked: Set<String> = []
+    /// Systeembrede cijfers voor de balk bovenin.
+    @Published var stats: SystemStats?
 
     private var generation = 0
     private var cpuSamples: [pid_t: (ns: UInt64, at: UInt64)] = [:]
@@ -42,7 +44,18 @@ final class Model: ObservableObject {
     init() {
         // Live CPU/geheugen bijwerken zolang het venster in beeld is.
         liveTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            self?.refreshStats()
             self?.refreshMetrics()
+        }
+        refreshStats()
+    }
+
+    private func refreshStats() {
+        guard stats == nil || (NSApp.isActive && AppDelegate.shared?.window.isVisible == true) else { return }
+        let previous = stats
+        DispatchQueue.global(qos: .utility).async {
+            let s = SystemStats.measure(previous: previous)
+            DispatchQueue.main.async { self.stats = s }
         }
     }
     /// Welke bevestiging openstaat (tweede keer drukken = uitvoeren).

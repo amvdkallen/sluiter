@@ -109,6 +109,10 @@ struct ContentView: View {
             }
             .padding(10)
 
+            if let stats = model.stats {
+                StatsBar(stats: stats)
+            }
+
             Divider()
 
             ScrollViewReader { proxy in
@@ -193,3 +197,76 @@ struct ContentView: View {
     }
 }
 
+
+// MARK: - Systeembalk
+
+struct StatsBar: View {
+    let stats: SystemStats
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 14) {
+                HStack(spacing: 6) {
+                    Image(systemName: "memorychip").opacity(0.6)
+                    ProgressView(value: stats.memoryFraction)
+                        .progressViewStyle(.linear)
+                        .tint(pressureColor)
+                        .frame(width: 90)
+                    Text(String(format: "%.1f / %.0f GB", stats.memoryUsedGB, stats.memoryTotalGB))
+                        .font(.system(size: 11, design: .monospaced))
+                }
+                .help("Gebruikt geheugen (zoals Activiteitenweergave)")
+
+                Label(pressureText, systemImage: "gauge.medium")
+                    .foregroundColor(pressureColor)
+                    .help("Geheugendruk: hoe hard macOS moet werken om alles in het geheugen te houden")
+
+                Label(stats.cpuPercent.map { String(format: "CPU %.0f%%", $0) } ?? "CPU —", systemImage: "cpu")
+                    .foregroundColor((stats.cpuPercent ?? 0) > 80 ? .red : (stats.cpuPercent ?? 0) > 50 ? .orange : .primary)
+
+                if stats.swapUsedGB >= 0.1 {
+                    Label(String(format: "Swap %.1f GB", stats.swapUsedGB), systemImage: "arrow.left.arrow.right")
+                        .foregroundColor(stats.swapUsedGB > 4 ? .orange : .secondary)
+                        .help("Swap: geheugen dat naar de schijf is uitgeweken. Veel swap = trage Mac.")
+                }
+                Spacer()
+            }
+            .font(.system(size: 11))
+            .labelStyle(.titleAndIcon)
+
+            if let advice {
+                Text(advice)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(pressureColor == .primary ? .orange : pressureColor)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+    }
+
+    private var pressureText: String {
+        switch stats.pressure {
+        case .normal: return "Druk: normaal"
+        case .warning: return "Druk: hoog"
+        case .critical: return "Druk: kritiek"
+        }
+    }
+
+    private var pressureColor: Color {
+        switch stats.pressure {
+        case .normal: return stats.memoryFraction > 0.9 ? .orange : .green
+        case .warning: return .orange
+        case .critical: return .red
+        }
+    }
+
+    private var advice: String? {
+        switch stats.pressure {
+        case .critical: return "⚠️ Je Mac heeft ernstig geheugentekort — sluit de bovenste apps in de lijst."
+        case .warning: return "Je Mac krijgt geheugentekort — sluit een paar grote apps om hem sneller te maken."
+        case .normal:
+            if let cpu = stats.cpuPercent, cpu > 85 { return "De processor draait vol — kijk welke app veel CPU gebruikt." }
+            return nil
+        }
+    }
+}

@@ -119,3 +119,72 @@ enum HangDetector {
         return hung
     }
 }
+
+// MARK: - Systeembreed: geheugen, geheugendruk, CPU, swap
+
+struct SystemStats {
+    enum Pressure: Int { case normal = 1, warning = 2, critical = 4 }
+
+    var memoryUsedGB: Double = 0
+    var memoryTotalGB: Double = 0
+    var swapUsedGB: Double = 0
+    var pressure: Pressure = .normal
+    var cpuPercent: Double? = nil      // gemiddeld over alle cores, 0–100
+    var cpuTicks: (busy: UInt64, total: UInt64) = (0, 0)
+
+    var memoryFraction: Double { memoryTotalGB > 0 ? min(1, memoryUsedGB / memoryTotalGB) : 0 }
+
+    /// Meet nu; `previous` is nodig om CPU-% over het interval te berekenen.
+    static func measure(previous: SystemStats?) -> SystemStats {
+        var s = SystemStats()
+        s.memoryTotalGB = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824
+
+        // Gebruikt geheugen zoals Activiteitenweergave: app-geheugen + wired + gecomprimeerd.
+        var vm = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+        let kr = withUnsafeMutablePointer(to: &vm) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+            }
+        }
+        if kr == KERN_SUCCESS {
+            let page = Double(vm_kernel_page_size)
+            let appPages = Double(vm.internal_page_count) - Double(vm.purgeable_count)
+            let used = (appPages + Double(vm.wire_count) + Double(vm.compressor_page_count)) * page
+            s.memoryUsedGB = used / 1_073_741_824
+        }
+
+        // Geheugendruk (dezelfde indicator als in Activiteitenweergave).
+        var level: Int32 = 1
+        var size = MemoryLayout<Int32>.size
+        if sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &size, nil, 0) == 0 {
+            s.pressure = Pressure(rawValue: Int(level)) ?? .normal
+        }
+
+        // Swap
+        var swap = xsw_usage()
+        var swapSize = MemoryLayout<xsw_usage>.size
+        if sysctlbyname("vm.swapusage", &swap, &swapSize, nil, 0) == 0 {
+            s.swapUsedGB = Double(swap.xsu_used) / 1_073_741_824
+        }
+
+        // CPU (alle cores samen)
+        var load = host_cpu_load_info()
+        var loadCount = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info>.size / MemoryLayout<integer_t>.size)
+        let kr2 = withUnsafeMutablePointer(to: &load) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(loadCount)) {
+                host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &loadCount)
+            }
+        }
+        if kr2 == KERN_SUCCESS {
+            let t = load.cpu_ticks
+            let user = UInt64(t.0), system = UInt64(t.1), idle = UInt64(t.2), nice = UInt64(t.3)
+            s.cpuTicks = (user + system + nice, user + system + idle + nice)
+            if let p = previous, s.cpuTicks.total > p.cpuTicks.total {
+                let busy = Double(s.cpuTicks.busy &- p.cpuTicks.busy)
+                s.cpuPercent = busy / Double(s.cpuTicks.total - p.cpuTicks.total) * 100
+            }
+        }
+        return s
+    }
+}
