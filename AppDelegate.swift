@@ -172,8 +172,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let shift = flags.contains(.shift)
 
         switch Int(e.keyCode) {
-        case kVK_DownArrow: model.move(1)
-        case kVK_UpArrow: model.move(-1)
+        case kVK_DownArrow: shift ? model.extendMark(1) : model.move(1)
+        case kVK_UpArrow: shift ? model.extendMark(-1) : model.move(-1)
         case kVK_PageDown: model.move(10)
         case kVK_PageUp: model.move(-10)
         case kVK_Home: model.jump(toEnd: false)
@@ -187,13 +187,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case kVK_Tab:
             model.toggleMode()
         case kVK_Escape:
-            if model.filter.isEmpty { NSApp.hide(nil) } else { model.filter = "" }
+            if !model.marked.isEmpty { model.clearMarks() }
+            else if model.filter.isEmpty { NSApp.hide(nil) } else { model.filter = "" }
         case kVK_Delete:
             if cmd { model.cleanUp() }
             else if !model.filter.isEmpty { model.filter.removeLast() }
         default:
             if cmd && e.charactersIgnoringModifiers?.lowercased() == "p" {
                 model.toggleProtectSelected()
+                return true
+            }
+            if cmd && e.charactersIgnoringModifiers?.lowercased() == "a" {
+                model.toggleMarkAll()
                 return true
             }
             if cmd || flags.contains(.control) { return false } // laat het menu ⌘-toetsen afhandelen

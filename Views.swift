@@ -10,9 +10,14 @@ struct RowView: View {
     let item: Item
     let selected: Bool
     let isProtected: Bool
+    var isMarked = false
 
     var body: some View {
         HStack(spacing: 10) {
+            Image(systemName: isMarked ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 14))
+                .foregroundColor(selected ? .white : (isMarked ? .accentColor : .secondary))
+                .opacity(isMarked || selected ? 1 : 0.25)
             if let icon = item.icon {
                 Image(nsImage: icon).resizable().frame(width: 26, height: 26)
             } else {
@@ -40,7 +45,8 @@ struct RowView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .foregroundColor(selected ? .white : .primary)
-        .background(RoundedRectangle(cornerRadius: 7).fill(selected ? Color.accentColor : Color.clear))
+        .background(RoundedRectangle(cornerRadius: 7).fill(
+            selected ? Color.accentColor : (isMarked ? Color.accentColor.opacity(0.18) : Color.clear)))
         .contentShape(Rectangle())
     }
 
@@ -69,6 +75,12 @@ struct ContentView: View {
                 Text(model.filter.isEmpty ? "Typ om te filteren" : model.filter)
                     .opacity(model.filter.isEmpty ? 0.4 : 1)
                     .frame(minWidth: 140, alignment: .leading)
+                if !model.marked.isEmpty {
+                    Text("\(model.marked.count) gemarkeerd")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(Color.accentColor.opacity(0.25)))
+                }
                 Text("\(items.count)").font(.system(size: 11, design: .monospaced)).opacity(0.5)
             }
             .padding(10)
@@ -80,13 +92,20 @@ struct ContentView: View {
                     LazyVStack(spacing: 2) {
                         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                             RowView(item: item, selected: index == model.selection,
-                                    isProtected: settings.isProtected(item.bundleID))
+                                    isProtected: settings.isProtected(item.bundleID),
+                                    isMarked: model.marked.contains(item.id))
                                 .id(item.id)
-                                .onTapGesture { model.selection = index }
+                                .onTapGesture {
+                                    if NSEvent.modifierFlags.contains(.command) { model.toggleMark(at: index) }
+                                    else { model.selection = index }
+                                }
                                 .contextMenu {
                                     Button("Sluiten") { model.selection = index; model.closeSelected(force: false) }
                                     if item.kind == .app {
                                         Button("Geforceerd stoppen") { model.selection = index; model.closeSelected(force: true) }
+                                    }
+                                    Button(model.marked.contains(item.id) ? "Markering weghalen" : "Markeren") {
+                                        model.toggleMark(at: index)
                                     }
                                     Divider()
                                     Button(settings.isProtected(item.bundleID) ? "Bescherming opheffen" : "Beschermen 📌") {
@@ -122,7 +141,7 @@ struct ContentView: View {
 
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("↑↓ kiezen · spatie/⏎ sluiten · ⇧⏎ forceer · ⌘⏎ alles · ⌘P beschermen · ⌘⌫ opruimen · ⇥ wissel")
+                    Text("↑↓ kiezen · spatie/⏎ sluiten · ⇧↑↓/⌘A markeren · ⇧⏎ forceer · ⌘⏎ alles · ⌘P beschermen · ⌘⌫ opruimen · ⇥ wissel")
                         .font(.system(size: 11)).opacity(0.6)
                     if !model.status.isEmpty {
                         Text(model.status).font(.system(size: 11, weight: .medium)).lineLimit(2)

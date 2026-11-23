@@ -28,6 +28,8 @@ final class Model: ObservableObject {
     @Published var filter = "" { didSet { selection = 0 } }
     @Published var status = ""
     @Published var loading = false
+    /// Gemarkeerde items (id's) voor meervoudig sluiten.
+    @Published var marked: Set<String> = []
 
     private var generation = 0
     /// Welke bevestiging openstaat (tweede keer drukken = uitvoeren).
@@ -71,6 +73,8 @@ final class Model: ObservableObject {
                 guard gen == self.generation else { return }
                 self.items = result
                 self.loading = false
+                let ids = Set(result.map(\.id))
+                self.marked = self.marked.intersection(ids)
                 if mode == .windows && unresponsive > 0 && self.status.isEmpty {
                     self.status = "\(unresponsive) app(s) gaven geen antwoord (te traag of geen vensters)."
                 }
@@ -185,15 +189,58 @@ final class Model: ObservableObject {
         selection = toEnd ? max(0, visible.count - 1) : 0
     }
 
+    // MARK: Markeren
+
+    /// ⌘-klik: markering van één rij aan/uit.
+    func toggleMark(at index: Int) {
+        let v = visible
+        guard v.indices.contains(index) else { return }
+        let id = v[index].id
+        if marked.contains(id) { marked.remove(id) } else { marked.insert(id) }
+        selection = index
+        updateMarkStatus()
+    }
+
+    /// ⇧↑/⇧↓: huidige rij markeren en doorschuiven (markering uitbreiden).
+    func extendMark(_ delta: Int) {
+        let v = visible
+        guard v.indices.contains(selection) else { return }
+        marked.insert(v[selection].id)
+        move(delta)
+        if v.indices.contains(selection) { marked.insert(v[selection].id) }
+        updateMarkStatus()
+    }
+
+    /// ⌘A: alles in de lijst markeren, of — als alles al gemarkeerd is — alles wissen.
+    func toggleMarkAll() {
+        let ids = Set(visible.map(\.id))
+        marked = ids.isSubset(of: marked) ? [] : marked.union(ids)
+        updateMarkStatus()
+    }
+
+    func clearMarks() {
+        marked = []
+        status = ""
+    }
+
+    private func updateMarkStatus() {
+        status = marked.isEmpty ? "" : "\(marked.count) gemarkeerd — spatie/⏎ sluit ze allemaal, esc wist de markering."
+    }
+
     func toggleMode() {
         mode = (mode == .apps) ? .windows : .apps
         filter = ""
+        marked = []
         status = ""
         items = []
         reload()
     }
 
     func closeSelected(force: Bool) {
+        if !marked.isEmpty {
+            closeMarked(force: force)
+            return
+        }
         guard let item = selectedItem else { return }
         pendingConfirm = nil
         close(item, force: force)
@@ -259,6 +306,23 @@ final class Model: ObservableObject {
         filter = ""
         clampSelection()
         status = "\(targets.count) gesloten."
+        scheduleResync()
+    }
+
+    /// Sluit alle gemarkeerde items. Beschermde apps worden overgeslagen,
+    /// tenzij je er precies één hebt gemarkeerd.
+    private func closeMarked(force: Bool) {
+        let settings = Settings.shared
+        let chosen = items.filter { marked.contains($0.id) }
+        let targets = chosen.count == 1 ? chosen : chosen.filter { !settings.isProtected($0.bundleID) }
+        let skipped = chosen.count - targets.count
+        pendingConfirm = nil
+        targets.forEach { close($0, force: force) }
+        let ids = Set(targets.map(\.id))
+        items.removeAll { ids.contains($0.id) }
+        marked = []
+        clampSelection()
+        status = "\(targets.count) gesloten" + (skipped > 0 ? ", \(skipped) beschermd overgeslagen." : ".")
         scheduleResync()
     }
 

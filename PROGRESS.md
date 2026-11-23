@@ -14,7 +14,7 @@ Bij onderbreking (usage limit): `git log --oneline` + deze lijst laten zien waar
 ## Status
 - [x] 0. Code opgesplitst, git, voortgangsbestand
 - [x] 1+2. Beschermde apps + Opruimen
-- [ ] 3. Meerdere selecteren
+- [x] 3. Meerdere selecteren
 - [ ] 4. CPU + "reageert niet"
 - [ ] 5. Instellingen: starten bij inloggen + eigen sneltoets
 - [ ] 6. Systeembalk (geheugen, geheugendruk, CPU)
