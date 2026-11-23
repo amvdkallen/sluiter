@@ -41,7 +41,8 @@ enum BrowserTabs {
             }
             for record in out.components(separatedBy: recordSep) where !record.isEmpty {
                 let f = record.components(separatedBy: fieldSep)
-                guard f.count >= 5, let wid = Int(f[0]), let idx = Int(f[2]) else { continue }
+                // Precies 5 velden; scheidingstekens worden in het script al uit titels/URL's gehaald.
+                guard f.count == 5, let wid = Int(f[0]), let idx = Int(f[2]) else { continue }
                 let tabID = Int(f[1]).flatMap { $0 == 0 ? nil : $0 }
                 let title = f[3].isEmpty || f[3] == "missing value" ? "(nieuw tabblad)" : f[3]
                 let url = f[4] == "missing value" ? "" : f[4]
@@ -95,6 +96,16 @@ enum BrowserTabs {
         let isSafari = bundleID == safari
         // Per venster alle eigenschappen in één keer ophalen (veel sneller dan per tabblad).
         return """
+        -- Scheidingstekens uit titels/URL's halen, zodat een webpagina geen nep-regels kan maken.
+        on clean(s)
+            set AppleScript's text item delimiters to {character id 30, character id 31}
+            set parts to text items of s
+            set AppleScript's text item delimiters to " "
+            set s to parts as text
+            set AppleScript's text item delimiters to ""
+            return s
+        end clean
+
         set sep to character id 31
         set rs to character id 30
         set out to ""
@@ -118,7 +129,7 @@ enum BrowserTabs {
                         try
                             set tid to (item k of theIDs)
                         end try
-                        set out to out & wid & sep & tid & sep & k & sep & t & sep & u & rs
+                        set out to out & wid & sep & tid & sep & k & sep & (my clean(t)) & sep & (my clean(u)) & rs
                     end repeat
                 end try
             end repeat
