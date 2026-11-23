@@ -25,7 +25,12 @@ struct RowView: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                if !item.subtitle.isEmpty {
+                if item.notResponding {
+                    Text("reageert niet — ⇧⏎ om geforceerd te stoppen")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(selected ? .white : .red)
+                        .lineLimit(1)
+                } else if !item.subtitle.isEmpty {
                     Text(item.subtitle).font(.system(size: 11)).opacity(0.65).lineLimit(1)
                 }
             }
@@ -37,22 +42,41 @@ struct RowView: View {
                     .help("Beschermd: wordt niet meegesloten")
             }
             if item.kind == .app {
+                Text(cpuText)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(selected ? .white : cpuColor)
+                    .frame(width: 52, alignment: .trailing)
+                    .help("CPU-gebruik")
                 Text(memoryText)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundColor(selected ? .white : memoryColor)
+                    .frame(width: 66, alignment: .trailing)
+                    .help("Geheugengebruik (incl. hulpprocessen)")
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .foregroundColor(selected ? .white : .primary)
         .background(RoundedRectangle(cornerRadius: 7).fill(
-            selected ? Color.accentColor : (isMarked ? Color.accentColor.opacity(0.18) : Color.clear)))
+            selected ? Color.accentColor
+                     : isMarked ? Color.accentColor.opacity(0.18)
+                     : item.notResponding ? Color.red.opacity(0.12) : Color.clear))
         .contentShape(Rectangle())
     }
 
     private var memoryText: String {
         item.memoryMB >= 1024 ? String(format: "%.1f GB", item.memoryMB / 1024)
                               : String(format: "%.0f MB", item.memoryMB)
+    }
+
+    private var cpuText: String {
+        guard let cpu = item.cpuPercent else { return "—" }
+        return cpu < 10 ? String(format: "%.1f%%", cpu) : String(format: "%.0f%%", cpu)
+    }
+
+    private var cpuColor: Color {
+        guard let cpu = item.cpuPercent else { return .secondary }
+        return cpu > 80 ? .red : cpu > 30 ? .orange : .secondary
     }
 
     private var memoryColor: Color {

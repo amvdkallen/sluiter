@@ -15,8 +15,10 @@ struct Item: Identifiable {
     let title: String
     let subtitle: String
     let icon: NSImage?
-    let memoryMB: Double
+    var memoryMB: Double
     let window: AXUIElement?
+    var cpuPercent: Double? = nil
+    var notResponding = false
 }
 
 final class Model: ObservableObject {
@@ -32,6 +34,17 @@ final class Model: ObservableObject {
     @Published var marked: Set<String> = []
 
     private var generation = 0
+    private var cpuSamples: [pid_t: (ns: UInt64, at: UInt64)] = [:]
+    private var hangStrikes: [pid_t: Int] = [:]
+    private var liveTimer: Timer?
+    private var measuring = false
+
+    init() {
+        // Live CPU/geheugen bijwerken zolang het venster in beeld is.
+        liveTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            self?.refreshMetrics()
+        }
+    }
     /// Welke bevestiging openstaat (tweede keer drukken = uitvoeren).
     private var pendingConfirm: String?
 
@@ -69,9 +82,11 @@ final class Model: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             var unresponsive = 0
             let result = mode == .apps ? Self.loadApps() : Self.loadWindows(unresponsive: &unresponsive)
+            let metrics = mode == .apps ? Metrics.measure(pids: result.map(\.pid), checkHang: false) : nil
             DispatchQueue.main.async {
                 guard gen == self.generation else { return }
                 self.items = result
+                if let metrics { self.apply(metrics) }
                 self.loading = false
                 let ids = Set(result.map(\.id))
                 self.marked = self.marked.intersection(ids)
@@ -187,6 +202,41 @@ final class Model: ObservableObject {
 
     func jump(toEnd: Bool) {
         selection = toEnd ? max(0, visible.count - 1) : 0
+    }
+
+    // MARK: Live meten (CPU, geheugen, hangen)
+
+    private func refreshMetrics() {
+        guard mode == .apps, !measuring, !items.isEmpty, NSApp.isActive,
+              AppDelegate.shared?.window.isVisible == true else { return }
+        measuring = true
+        let pids = items.map(\.pid)
+        let checkHang = Self.axTrusted(prompt: false)
+        DispatchQueue.global(qos: .utility).async {
+            let m = Metrics.measure(pids: pids, checkHang: checkHang)
+            DispatchQueue.main.async {
+                self.measuring = false
+                if self.mode == .apps { self.apply(m) }
+            }
+        }
+    }
+
+    private func apply(_ m: Metrics) {
+        for i in items.indices {
+            let pid = items[i].pid
+            if let mem = m.memoryMB[pid] { items[i].memoryMB = mem }
+            if let ns = m.cpuNanos[pid] {
+                if let prev = cpuSamples[pid], m.timestamp > prev.at, ns >= prev.ns {
+                    items[i].cpuPercent = Double(ns - prev.ns) / Double(m.timestamp - prev.at) * 100
+                }
+                cpuSamples[pid] = (ns, m.timestamp)
+            }
+            if m.hangChecked {
+                // Pas na twee keer achter elkaar geen antwoord markeren (voorkomt valse meldingen).
+                hangStrikes[pid] = m.hung.contains(pid) ? (hangStrikes[pid] ?? 0) + 1 : 0
+                items[i].notResponding = (hangStrikes[pid] ?? 0) >= 2
+            }
+        }
     }
 
     // MARK: Markeren

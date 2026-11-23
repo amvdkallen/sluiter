@@ -1,15 +1,30 @@
 import AppKit
-import SwiftUI
-import Carbon.HIToolbox
 import ApplicationServices
 import Darwin
 
 // MARK: - Systeeminformatie
 
-/// Geheugengebruik per proces, inclusief child-processen (bv. Chrome helpers).
+/// Momentopname van alle processen: geheugen, CPU-tijd en ouder/kind-relaties.
+/// Totalen per app tellen child-processen mee (bv. Chrome helpers).
 struct ProcTree {
+    struct Info {
+        let pid: pid_t
+        let ppid: pid_t
+        let uid: uid_t
+        let name: String
+        let memory: UInt64      // bytes (phys_footprint, zoals Activiteitenweergave)
+        let cpuNanos: UInt64    // totale CPU-tijd sinds start
+    }
+
+    private(set) var info: [pid_t: Info] = [:]
     private var children: [pid_t: [pid_t]] = [:]
-    private var mem: [pid_t: UInt64] = [:]
+    let timestamp = DispatchTime.now().uptimeNanoseconds
+
+    private static let timebase: (numer: UInt64, denom: UInt64) = {
+        var tb = mach_timebase_info_data_t()
+        mach_timebase_info(&tb)
+        return (UInt64(tb.numer), UInt64(max(tb.denom, 1)))
+    }()
 
     init() {
         let estimate = proc_listallpids(nil, 0)
@@ -18,29 +33,89 @@ struct ProcTree {
         let n = Int(proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
         for pid in pids.prefix(max(0, n)) where pid > 0 {
             var bsd = proc_bsdinfo()
-            if proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd, Int32(MemoryLayout<proc_bsdinfo>.size)) > 0 {
-                children[pid_t(bsd.pbi_ppid), default: []].append(pid)
-            }
+            guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd, Int32(MemoryLayout<proc_bsdinfo>.size)) > 0 else { continue }
             var ri = rusage_info_v4()
             let r = withUnsafeMutablePointer(to: &ri) { p in
                 p.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
                     proc_pid_rusage(pid, RUSAGE_INFO_V4, $0)
                 }
             }
-            if r == 0 { mem[pid] = ri.ri_phys_footprint }
+            var nameBuf = [CChar](repeating: 0, count: 256)
+            proc_name(pid, &nameBuf, UInt32(nameBuf.count))
+            var name = String(cString: nameBuf)
+            if name.isEmpty {
+                name = withUnsafeBytes(of: bsd.pbi_comm) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+            }
+            let ticks = r == 0 ? ri.ri_user_time &+ ri.ri_system_time : 0
+            let ppid = pid_t(bsd.pbi_ppid)
+            info[pid] = Info(pid: pid, ppid: ppid, uid: bsd.pbi_uid, name: name,
+                             memory: r == 0 ? ri.ri_phys_footprint : 0,
+                             cpuNanos: ticks &* Self.timebase.numer / Self.timebase.denom)
+            children[ppid, default: []].append(pid)
         }
     }
 
-    func totalMB(_ pid: pid_t) -> Double {
-        var total: UInt64 = 0
+    /// Het proces zelf plus al zijn (klein)kinderen.
+    func family(_ pid: pid_t) -> [pid_t] {
+        var out: [pid_t] = []
         var stack = [pid]
         var seen = Set<pid_t>()
         while let p = stack.popLast() {
             guard seen.insert(p).inserted else { continue }
-            total += mem[p] ?? 0
+            out.append(p)
             stack += children[p] ?? []
         }
-        return Double(total) / 1_048_576
+        return out
+    }
+
+    func totalMB(_ pid: pid_t) -> Double {
+        Double(family(pid).reduce(UInt64(0)) { $0 + (info[$1]?.memory ?? 0) }) / 1_048_576
+    }
+
+    func totalCPUNanos(_ pid: pid_t) -> UInt64 {
+        family(pid).reduce(UInt64(0)) { $0 &+ (info[$1]?.cpuNanos ?? 0) }
     }
 }
 
+/// Meetresultaat voor een set apps (wordt op een achtergrondthread gemaakt).
+struct Metrics {
+    var memoryMB: [pid_t: Double] = [:]
+    var cpuNanos: [pid_t: UInt64] = [:]
+    var hung: Set<pid_t> = []
+    var hangChecked = false
+    var timestamp: UInt64 = 0
+
+    static func measure(pids: [pid_t], checkHang: Bool) -> Metrics {
+        let tree = ProcTree()
+        var m = Metrics()
+        m.timestamp = tree.timestamp
+        for pid in pids {
+            m.memoryMB[pid] = tree.totalMB(pid)
+            m.cpuNanos[pid] = tree.totalCPUNanos(pid)
+        }
+        if checkHang {
+            m.hangChecked = true
+            m.hung = HangDetector.unresponsive(pids)
+        }
+        return m
+    }
+}
+
+/// Herkent apps die niet reageren: een app die binnen 0,5 s geen antwoord geeft op een
+/// simpele Toegankelijkheid-vraag hangt vrijwel zeker. Vereist Toegankelijkheid-toegang.
+enum HangDetector {
+    static func unresponsive(_ pids: [pid_t]) -> Set<pid_t> {
+        guard !pids.isEmpty else { return [] }
+        let lock = NSLock()
+        var hung = Set<pid_t>()
+        DispatchQueue.concurrentPerform(iterations: pids.count) { i in
+            let el = AXUIElementCreateApplication(pids[i])
+            AXUIElementSetMessagingTimeout(el, 0.5)
+            var v: CFTypeRef?
+            if AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &v) == .cannotComplete {
+                lock.lock(); hung.insert(pids[i]); lock.unlock()
+            }
+        }
+        return hung
+    }
+}
